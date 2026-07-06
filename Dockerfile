@@ -63,11 +63,10 @@ EXPOSE 8000
 # reliably REPLACES the base image's `bash -l -c` entrypoint on every
 # builder (an empty `ENTRYPOINT []` is honored by BuildKit but ignored by
 # buildah, which OpenShift uses in-cluster — that mismatch causes a
-# CrashLoopBackOff). The script strips PYTHONPATH/PYTHONHOME and execs the
-# server; `combine` on PATH + LD_LIBRARY_PATH are inherited from the ENV.
-#
-# NOTE: because the server runs without PYTHONPATH, the Python-based
-# Combine tools (text2workspace.py, combineCards.py) won't resolve their
-# 3.9 modules yet — the `combine` binary (the primary use case) works. A
-# follow-up will re-inject the Combine PYTHONPATH per-subprocess.
+# CrashLoopBackOff). The script strips PYTHONPATH/PYTHONHOME so the 3.11
+# server interpreter stays clean, then execs the server; `combine` on PATH
+# + LD_LIBRARY_PATH are inherited from the base image ENV, and the Python
+# Combine tools (text2workspace.py, combineTool.py, combineCards.py) get
+# their PyROOT PYTHONPATH re-injected per-subprocess via
+# COMBINE_RUN_PYTHONPATH (see above), so Impacts and friends work too.
 ENTRYPOINT ["/opt/combine-run-mcp/docker-entrypoint.sh"]

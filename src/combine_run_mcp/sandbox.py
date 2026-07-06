@@ -33,12 +33,43 @@ from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from typing import Any
 
+try:
+    import resource  # POSIX only
+except ImportError:  # pragma: no cover - non-POSIX platforms
+    resource = None  # type: ignore[assignment]
+
 from combine_run_mcp.config import DEFAULT_ALLOWED_EXECUTABLES
 
 __all__ = ["RunResult", "run_combine"]
 
 _DEFAULT_TIMEOUT_S = 120
 _DEFAULT_MAX_OUTPUT_LINES = 400
+
+
+def _raise_stack_limit() -> None:
+    """Raise the soft stack limit toward the hard limit.
+
+    Combine's ``text2workspace.py`` can deep-recurse on large models and
+    segfault under the default ~8 MB stack; the upstream recommendation
+    is ``ulimit -s unlimited``. Spawned processes inherit this process's
+    rlimits, so raising it here — before spawning — applies to every
+    ``combine`` subprocess on every deployment (container, pixi, remote)
+    without depending on a login shell having sourced ``.bashrc``.
+
+    Best-effort: on a container where the hard limit is unlimited the
+    soft limit becomes unlimited; where the hard limit is capped (e.g.
+    macOS) the soft limit is raised to that cap. Failures (unsupported
+    platform, not permitted) are swallowed — the command still runs,
+    just with the pre-existing limit.
+    """
+    if resource is None:
+        return
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_STACK)
+        if hard == resource.RLIM_INFINITY or soft < hard:
+            resource.setrlimit(resource.RLIMIT_STACK, (hard, hard))
+    except (ValueError, OSError):
+        pass
 
 
 @dataclass
@@ -272,6 +303,7 @@ def run_combine(
         except ValueError as exc:
             return RunResult(command=command, error=str(exc))
 
+        _raise_stack_limit()  # inherited by the child; avoids big-model segfaults
         child_env = {**os.environ, **extra_env} if extra_env else None
         try:
             rc, stdout, stderr, timed_out = _run_in_workspace(

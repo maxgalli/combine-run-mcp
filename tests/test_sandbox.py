@@ -226,6 +226,23 @@ class TestRunCombine:
         assert result.returncode == 0
         assert "combine-lives" in result.stdout
 
+    def test_stack_limit_raised_for_subprocess(
+        self, test_allowlist: frozenset[str],
+    ) -> None:
+        # The child should inherit a stack soft limit raised to the hard
+        # limit (or unlimited) — the ulimit -s unlimited recommendation.
+        script = (
+            "import resource;"
+            "s,h=resource.getrlimit(resource.RLIMIT_STACK);"
+            "print(s==h or s==resource.RLIM_INFINITY)"
+        )
+        result = run_combine(
+            f"{PYEXE} -c \"{script}\"",
+            allowed_executables=test_allowlist,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == "True"
+
     def test_extra_env_reaches_subprocess(
         self, test_allowlist: frozenset[str],
     ) -> None:
