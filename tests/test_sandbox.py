@@ -225,3 +225,29 @@ class TestRunCombine:
         )
         assert result.returncode == 0
         assert "combine-lives" in result.stdout
+
+    def test_extra_env_reaches_subprocess(
+        self, test_allowlist: frozenset[str],
+    ) -> None:
+        script = "import os; print(os.environ.get('COMBINE_TEST_VAR'))"
+        result = run_combine(
+            f"{PYEXE} -c \"{script}\"",
+            extra_env={"COMBINE_TEST_VAR": "pyroot-here"},
+            allowed_executables=test_allowlist,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == "pyroot-here"
+
+    def test_extra_env_overlays_not_replaces(
+        self, test_allowlist: frozenset[str],
+    ) -> None:
+        # With extra_env set, the child still inherits the rest of the
+        # environment (PATH etc.), not just the overlay.
+        script = "import os; print(bool(os.environ.get('PATH')))"
+        result = run_combine(
+            f"{PYEXE} -c \"{script}\"",
+            extra_env={"COMBINE_TEST_VAR": "x"},
+            allowed_executables=test_allowlist,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == "True"

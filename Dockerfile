@@ -36,6 +36,15 @@ RUN env -u PYTHONPATH -u PYTHONHOME bash -c '\
       uv venv --python 3.11 /opt/mcp-venv && \
       uv pip install --python /opt/mcp-venv --no-cache /opt/combine-run-mcp'
 
+# `combine` shells out to text2workspace.py (Python) to turn a text
+# datacard into a workspace, and that script needs PyROOT on PYTHONPATH.
+# But that PYTHONPATH points at Python 3.9 packages that would break our
+# 3.11 server if it inherited them — so the entrypoint unsets PYTHONPATH
+# for the server, and we stash the Combine value here under a different
+# name. The server re-injects it for the spawned command only. Keep this
+# in sync with the base image's PYTHONPATH.
+ENV COMBINE_RUN_PYTHONPATH=/code/HiggsAnalysis/CombinedLimit/build/python:/usr/local/lib:/usr/local/lib/python3.9/site-packages
+
 # Make the launcher executable.
 RUN chmod 0755 /opt/combine-run-mcp/docker-entrypoint.sh
 

@@ -10,12 +10,28 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP  # noqa: TC002
 
 from combine_run_mcp import sandbox
 from combine_run_mcp.config import Limits, clamp_timeout  # noqa: TC001
+
+# Name of the env var that carries a PYTHONPATH to hand to the spawned
+# Combine command (but NOT to the server's own interpreter). Set by the
+# container image: `combine` invokes text2workspace.py, which needs
+# PyROOT on PYTHONPATH, but that same PYTHONPATH points at Python 3.9
+# packages that would break the 3.11 server if it inherited them.
+_SUBPROCESS_PYTHONPATH_ENV = "COMBINE_RUN_PYTHONPATH"
+
+
+def _subprocess_extra_env() -> dict[str, str] | None:
+    """Build the per-subprocess env overlay from the deployment config."""
+    pythonpath = os.environ.get(_SUBPROCESS_PYTHONPATH_ENV)
+    if pythonpath:
+        return {"PYTHONPATH": pythonpath}
+    return None
 
 
 def register(mcp: FastMCP) -> None:
@@ -73,6 +89,7 @@ def register(mcp: FastMCP) -> None:
                 max_output_lines=limits.max_output_lines,
                 max_total_input_bytes=limits.max_total_input_bytes,
                 allowed_executables=limits.allowed_executables,
+                extra_env=_subprocess_extra_env(),
             )
 
         return json.dumps(result.to_dict(), default=str)

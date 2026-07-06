@@ -161,12 +161,15 @@ def _run_in_workspace(
     argv: list[str],
     workspace: Path,
     timeout_s: int,
+    env: dict[str, str] | None = None,
 ) -> tuple[int | None, str, str, bool]:
     """Run ``argv`` in ``workspace``; return (rc, stdout, stderr, timed_out).
 
     The child is launched in its own process group so that a timeout
     can kill the whole tree (Combine may spawn helpers). Output is
-    decoded permissively so odd bytes never crash the reader.
+    decoded permissively so odd bytes never crash the reader. ``env``
+    is the full environment for the child; ``None`` inherits the
+    parent's.
     """
     proc = subprocess.Popen(  # noqa: S603 — argv is allowlisted, no shell
         argv,
@@ -176,6 +179,7 @@ def _run_in_workspace(
         text=True,
         errors="replace",
         start_new_session=True,
+        env=env,
     )
     try:
         stdout, stderr = proc.communicate(timeout=timeout_s)
@@ -198,6 +202,7 @@ def run_combine(
     max_output_lines: int = _DEFAULT_MAX_OUTPUT_LINES,
     max_total_input_bytes: int | None = None,
     allowed_executables: frozenset[str] = DEFAULT_ALLOWED_EXECUTABLES,
+    extra_env: dict[str, str] | None = None,
 ) -> RunResult:
     """Run one Combine command in a throwaway workspace.
 
@@ -215,6 +220,12 @@ def run_combine(
         max_total_input_bytes: Reject the call if inputs exceed this
             (``None`` = no cap).
         allowed_executables: Permitted ``argv[0]`` basenames.
+        extra_env: Environment overrides merged over the inherited
+            environment *for the spawned command only*. Used to hand the
+            Combine subprocess variables the server itself deliberately
+            drops — e.g. a ``PYTHONPATH`` that points at PyROOT, which
+            ``combine`` needs when it invokes ``text2workspace.py`` but
+            which would pollute the server's own interpreter.
 
     Returns:
         A :class:`RunResult`. Setup problems populate ``error`` and
@@ -261,9 +272,10 @@ def run_combine(
         except ValueError as exc:
             return RunResult(command=command, error=str(exc))
 
+        child_env = {**os.environ, **extra_env} if extra_env else None
         try:
             rc, stdout, stderr, timed_out = _run_in_workspace(
-                argv, workspace, timeout_s,
+                argv, workspace, timeout_s, env=child_env,
             )
         except FileNotFoundError:
             return RunResult(
