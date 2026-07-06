@@ -36,29 +36,29 @@ RUN env -u PYTHONPATH -u PYTHONHOME bash -c '\
       uv venv --python 3.11 /opt/mcp-venv && \
       uv pip install --python /opt/mcp-venv --no-cache /opt/combine-run-mcp'
 
+# Make the launcher executable.
+RUN chmod 0755 /opt/combine-run-mcp/docker-entrypoint.sh
+
 # OpenShift runs the pod as a random, non-root UID in group 0. Make the
 # dirs the server or ROOT may write to group-owned by 0 and
 # group-writable, so an arbitrary UID can use them. (Per-run Combine
 # workspaces live under /tmp, which is already world-writable.)
-RUN chgrp -R 0 /home/cmsusr /code /opt/mcp-venv /opt/uv-python \
-    && chmod -R g=u /home/cmsusr /code /opt/mcp-venv /opt/uv-python
+RUN chgrp -R 0 /home/cmsusr /code /opt/mcp-venv /opt/uv-python /opt/combine-run-mcp \
+    && chmod -R g=u /home/cmsusr /code /opt/mcp-venv /opt/uv-python /opt/combine-run-mcp
 
 USER cmsusr
 
 EXPOSE 8000
 
-# `combine` (the binary) is on PATH and needs LD_LIBRARY_PATH — both come
-# from the base image ENV and are inherited by the combine subprocess. We
-# strip only PYTHONPATH/PYTHONHOME so the 3.11 server interpreter isn't
-# polluted by the base image's Python 3.9 module paths.
+# Explicit entrypoint to a real launcher script. A non-empty ENTRYPOINT
+# reliably REPLACES the base image's `bash -l -c` entrypoint on every
+# builder (an empty `ENTRYPOINT []` is honored by BuildKit but ignored by
+# buildah, which OpenShift uses in-cluster — that mismatch causes a
+# CrashLoopBackOff). The script strips PYTHONPATH/PYTHONHOME and execs the
+# server; `combine` on PATH + LD_LIBRARY_PATH are inherited from the ENV.
 #
-# NOTE: this means the Python-based Combine tools (text2workspace.py,
-# combineCards.py), which need the 3.9 PYTHONPATH, won't resolve their
-# modules yet. The `combine` binary — the primary use case — works. A
+# NOTE: because the server runs without PYTHONPATH, the Python-based
+# Combine tools (text2workspace.py, combineCards.py) won't resolve their
+# 3.9 modules yet — the `combine` binary (the primary use case) works. A
 # follow-up will re-inject the Combine PYTHONPATH per-subprocess.
-ENTRYPOINT []
-CMD ["env", "-u", "PYTHONPATH", "-u", "PYTHONHOME", \
-     "/opt/mcp-venv/bin/combine-run-mcp", "serve", \
-     "--transport", "streamable-http", \
-     "--host", "0.0.0.0", "--port", "8000", \
-     "--profile", "remote"]
+ENTRYPOINT ["/opt/combine-run-mcp/docker-entrypoint.sh"]
